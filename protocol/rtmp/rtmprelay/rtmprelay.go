@@ -3,6 +3,7 @@ package rtmprelay
 import (
 	"bytes"
 	"fmt"
+	"github.com/gwuhaolin/livego/av"
 	"io"
 
 	"github.com/gwuhaolin/livego/protocol/amf"
@@ -18,8 +19,8 @@ var (
 type RtmpRelay struct {
 	PlayUrl              string
 	PublishUrl           string
-	cs_chan              chan core.ChunkStream
-	sndctrl_chan         chan string
+	csChan               chan core.ChunkStream
+	sndctrlChan          chan string
 	connectPlayClient    *core.ConnClient
 	connectPublishClient *core.ConnClient
 	startflag            bool
@@ -29,8 +30,8 @@ func NewRtmpRelay(playurl *string, publishurl *string) *RtmpRelay {
 	return &RtmpRelay{
 		PlayUrl:              *playurl,
 		PublishUrl:           *publishurl,
-		cs_chan:              make(chan core.ChunkStream, 500),
-		sndctrl_chan:         make(chan string),
+		csChan:               make(chan core.ChunkStream, 500),
+		sndctrlChan:          make(chan string),
 		connectPlayClient:    nil,
 		connectPublishClient: nil,
 		startflag:            false,
@@ -62,7 +63,7 @@ func (self *RtmpRelay) rcvPlayChunkStream() {
 		case 18:
 			log.Debug("rcvPlayRtmpMediaPacket: metadata....")
 		case 8, 9:
-			self.cs_chan <- rc
+			self.csChan <- rc
 		}
 	}
 }
@@ -70,10 +71,10 @@ func (self *RtmpRelay) rcvPlayChunkStream() {
 func (self *RtmpRelay) sendPublishChunkStream() {
 	for {
 		select {
-		case rc := <-self.cs_chan:
+		case rc := <-self.csChan:
 			//log.Debugf("sendPublishChunkStream: rc.TypeID=%v length=%d", rc.TypeID, len(rc.Data))
 			self.connectPublishClient.Write(rc)
-		case ctrlcmd := <-self.sndctrl_chan:
+		case ctrlcmd := <-self.sndctrlChan:
 			if ctrlcmd == STOP_CTRL {
 				self.connectPublishClient.Close(nil)
 				log.Debugf("sendPublishChunkStream close: playurl=%s, publishurl=%s", self.PlayUrl, self.PublishUrl)
@@ -92,14 +93,14 @@ func (self *RtmpRelay) Start() error {
 	self.connectPublishClient = core.NewConnClient()
 
 	log.Debugf("play server addr:%v starting....", self.PlayUrl)
-	err := self.connectPlayClient.Start(self.PlayUrl, "play")
+	err := self.connectPlayClient.Start(self.PlayUrl, av.PLAY)
 	if err != nil {
 		log.Debugf("connectPlayClient.Start url=%v error", self.PlayUrl)
 		return err
 	}
 
 	log.Debugf("publish server addr:%v starting....", self.PublishUrl)
-	err = self.connectPublishClient.Start(self.PublishUrl, "publish")
+	err = self.connectPublishClient.Start(self.PublishUrl, av.PUBLISH)
 	if err != nil {
 		log.Debugf("connectPublishClient.Start url=%v error", self.PublishUrl)
 		self.connectPlayClient.Close(nil)
@@ -120,5 +121,5 @@ func (self *RtmpRelay) Stop() {
 	}
 
 	self.startflag = false
-	self.sndctrl_chan <- STOP_CTRL
+	self.sndctrlChan <- STOP_CTRL
 }
